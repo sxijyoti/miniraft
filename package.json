@@ -1,0 +1,15 @@
+{
+  "name": "mini-raft",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mini-RAFT distributed drawing board infra",
+  "main": "src/gateway/server.js",
+  "scripts": {
+    "start:gateway": "node src/gateway/server.js",
+    "start:replica": "node src/replica/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

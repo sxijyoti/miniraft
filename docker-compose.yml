@@ -1,0 +1,88 @@
+services:
+  gateway:
+    container_name: gateway
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.gateway
+    environment:
+      PORT: "3000"
+      REPLICA_ENDPOINTS: "http://replica1:4001,http://replica2:4002,http://replica3:4003"
+    ports:
+      - "3000:3000"
+    restart: always
+    depends_on:
+      - replica1
+      - replica2
+      - replica3
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - raft-network
+
+  replica1:
+    container_name: replica1
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.replica
+    environment:
+      REPLICA_ID: "1"
+      PORT: "4001"
+      PEERS: "http://replica2:4002,http://replica3:4003"
+    ports:
+      - "4001:4001"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - raft-network
+
+  replica2:
+    container_name: replica2
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.replica
+    environment:
+      REPLICA_ID: "2"
+      PORT: "4002"
+      PEERS: "http://replica1:4001,http://replica3:4003"
+    ports:
+      - "4002:4002"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4002/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - raft-network
+
+  replica3:
+    container_name: replica3
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.replica
+    environment:
+      REPLICA_ID: "3"
+      PORT: "4003"
+      PEERS: "http://replica1:4001,http://replica2:4002"
+    ports:
+      - "4003:4003"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4003/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - raft-network
+
+networks:
+  raft-network:
+    name: raft-network
+    driver: bridge
