@@ -2,6 +2,7 @@ const express = require('express');
 const RaftState = require('../replicas/common/raftState');
 const ElectionTimeout = require('../replicas/common/electionTimeout');
 const ElectionManager = require('../replicas/common/election');
+const ReplicationManager = require('../replicas/common/replicationManager'); // ADDED FOR LOG REPLICATION
 const Logger = require('../replicas/common/logger');
 const { HEARTBEAT_INTERVAL, RPC_TIMEOUT } = require('../replicas/common/constants');
 
@@ -23,6 +24,7 @@ const state = new RaftState(REPLICA_ID);
 let electionManager = null;
 let electionTimeout = null;
 let heartbeatInterval = null;
+let replicationManager = null; // ADDED FOR LOG REPLICATION
 
 /**
  * Handler for when election timeout fires
@@ -31,8 +33,15 @@ let heartbeatInterval = null;
 function onElectionTimeout() {
   logger.stateTransition(state.role, 'candidate', 'election timeout');
 
+  // BUGFIX: If election is already in progress, end it first so we can start a new one
+  // with an incremented term. This breaks deadlock in split-vote scenarios.
+  if (electionManager.isElectionInProgress()) {
+    logger.info('[ELECTION TIMEOUT] Ending current election and starting new one with incremented term');
+    electionManager.endElection();
+  }
+
   if (!electionManager.startElection()) {
-    return; // Election already in progress
+    return; // Really shouldn't happen now, but keep as safety check
   }
 
   // Request votes from all peers
@@ -118,8 +127,12 @@ function becomeLeader() {
     
     electionManager.endElection();
     electionTimeout.cancel();
+
+    if (replicationManager) {
+      replicationManager.resetForNewLeader(); // ADDED FOR LOG REPLICATION
+    }
     
-    // Start heartbeat broadcast to followers
+    // Start heartbeat broadcast to followers (with replication)
     startHeartbeatBroadcast();
   }
 }
@@ -155,6 +168,7 @@ function broadcastHeartbeat() {
     leaderId: REPLICA_ID
   };
 
+  // send heartbeat as lightweight keepalive
   for (const peerUrl of PEERS) {
     (async () => {
       try {
@@ -175,12 +189,14 @@ function broadcastHeartbeat() {
         }
 
         const result = await response.json();
-        
+
         // Higher term seen - revert to follower
         if (result.currentTerm > state.currentTerm) {
           state.updateTerm(result.currentTerm);
           state.toFollower(result.currentTerm);
-          electionManager.endElection();
+          if (electionManager && electionManager.isElectionInProgress()) {
+            electionManager.endElection();
+          }
           clearInterval(heartbeatInterval);
           heartbeatInterval = null;
           electionTimeout.reset();
@@ -190,6 +206,11 @@ function broadcastHeartbeat() {
         logger.debug(`Heartbeat to ${peerUrl} error: ${error.message}`);
       }
     })();
+  }
+
+  // Also replicate log entries for this leader
+  if (replicationManager) {
+    replicationManager.replicateToAll(); // ADDED FOR LOG REPLICATION
   }
 }
 
@@ -206,6 +227,40 @@ app.get('/state', (_req, res) => {
   res.json({
     ...snapshot,
     peers: PEERS
+  });
+});
+
+app.post('/command', async (req, res) => {
+  // ADDED FOR LOG REPLICATION: client write path for leader
+  if (!state.isLeader()) {
+    return res.status(400).json({ error: 'Not leader', leaderId: state.leaderId });
+  }
+
+  const { command } = req.body || {};
+  if (!command) {
+    return res.status(400).json({ error: 'command required' });
+  }
+
+  const entry = {
+    term: state.currentTerm,
+    command,
+    timestamp: Date.now()
+  };
+
+  const index = state.appendEntry(entry);
+
+  // Ensure leader replication state knows this entry is pending
+  if (replicationManager) {
+    replicationManager.nextIndex[REPLICA_ID] = state.getLogLength();
+    // Trigger immediate replication attempt
+    replicationManager.replicateToAll();
+  }
+
+  return res.json({
+    ok: true,
+    index,
+    term: state.currentTerm,
+    leaderId: REPLICA_ID
   });
 });
 
@@ -250,7 +305,7 @@ app.post('/rpc/request-vote', (req, res) => {
 });
 
 app.post('/rpc/append-entries', (req, res) => {
-  const { term, leaderId, entries = [], prevLogIndex = 0, prevLogTerm = 0 } = req.body || {};
+  const { term, leaderId, entries = [], prevLogIndex = -1, prevLogTerm = 0, leaderCommit = 0 } = req.body || {};
 
   if (typeof term !== 'number') {
     return res.status(400).json({ error: 'term must be a number' });
@@ -280,13 +335,22 @@ app.post('/rpc/append-entries', (req, res) => {
     return res.json({ term: state.currentTerm, success: false });
   }
 
-  // Update leader if needed
+  // Simplified RAFT consistency check: match previous log entry
+  if (prevLogIndex >= 0) {
+    const prevEntry = state.getEntryAt(prevLogIndex);
+    if (!prevEntry || prevEntry.term !== prevLogTerm) {
+      logger.rpc('SEND', 'append-entries', 'rejected', `log mismatch prevIndex=${prevLogIndex}`);
+      return res.json({ term: state.currentTerm, success: false });
+    }
+  }
+
+  // Update leader info
   if (state.leaderId !== leaderId) {
     state.leaderId = leaderId;
     logger.info(`Leader recognized: ${leaderId}`);
   }
 
-  // Ensure follower role when receiving from leader
+  // Become follower under leader
   if (!state.isFollower()) {
     state.toFollower(term);
     if (electionManager && electionManager.isElectionInProgress()) {
@@ -294,16 +358,45 @@ app.post('/rpc/append-entries', (req, res) => {
     }
   }
 
-  // Append entries to log
-  state.appendEntries(entries);
+  // Delete conflicting entries after prevLogIndex
+  const currentLength = state.getLogLength();
+  const firstConflictIndex = prevLogIndex + 1;
+  if (firstConflictIndex < currentLength) {
+    state.log = state.log.slice(0, firstConflictIndex);
+  }
 
-  logger.rpc('SEND', 'append-entries', 'accepted', `logLen=${state.getLogLength()}`);
+  // Append new log entries from leader
+  if (entries.length > 0) {
+    state.appendEntries(entries);
+  }
+
+  // Advance commit index
+  const lastNewIndex = state.getLogLength() - 1;
+  const newCommit = Math.min(leaderCommit, lastNewIndex);
+  if (newCommit > state.commitIndex) {
+    state.updateCommitIndex(newCommit);
+  }
+
+  // Apply committed entries locally
+  const applyLocal = () => {
+    while (state.lastApplied < state.commitIndex) {
+      state.lastApplied += 1;
+      const logEntry = state.getEntryAt(state.lastApplied);
+      if (logEntry) {
+        logger.info(`Applied log entry ${state.lastApplied}: ${JSON.stringify(logEntry)}`);
+      }
+    }
+  };
+  applyLocal();
+
+  logger.rpc('SEND', 'append-entries', 'accepted', `logLen=${state.getLogLength()} commitIndex=${state.commitIndex}`);
 
   return res.json({
     term: state.currentTerm,
     success: true,
     leaderId,
-    logLength: state.getLogLength()
+    logLength: state.getLogLength(),
+    commitIndex: state.commitIndex
   });
 });
 
@@ -382,11 +475,28 @@ app.post('/rpc/sync-log', (req, res) => {
     state.currentTerm = term;
     state.role = 'follower';
     state.leaderId = leaderId;
-    
+
     // Replace log from fromIndex onwards with provided entries
     state.log = state.log.slice(0, fromIndex).concat(log);
-    
-    logger.rpc('SEND', 'sync-log', 'accepted', `newLogLen=${state.getLogLength()}`);
+
+    // Advance commit index to leaderCommit if provided, else to end
+    const leaderCommit = typeof req.body.leaderCommit === 'number' ? req.body.leaderCommit : state.commitIndex;
+    const lastIndex = state.getLogLength() - 1;
+    const newCommit = Math.min(leaderCommit, lastIndex);
+    if (newCommit > state.commitIndex) {
+      state.updateCommitIndex(newCommit);
+    }
+
+    // Apply committed entries
+    while (state.lastApplied < state.commitIndex) {
+      state.lastApplied += 1;
+      const entry = state.getEntryAt(state.lastApplied);
+      if (entry) {
+        logger.info(`Applied log entry ${state.lastApplied}: ${JSON.stringify(entry)}`);
+      }
+    }
+
+    logger.rpc('SEND', 'sync-log', 'accepted', `newLogLen=${state.getLogLength()} commitIndex=${state.commitIndex}`);
   } else {
     logger.rpc('SEND', 'sync-log', 'rejected', `stale term`);
   }
@@ -396,7 +506,8 @@ app.post('/rpc/sync-log', (req, res) => {
     replicaId: state.replicaId,
     currentTerm: state.currentTerm,
     leaderId: state.leaderId,
-    logLength: state.getLogLength()
+    logLength: state.getLogLength(),
+    commitIndex: state.commitIndex
   });
 });
 
@@ -440,6 +551,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
   // Initialize election manager
   electionManager = new ElectionManager(state, PEERS, logger);
+
+  // Initialize replication manager (leader replication state is maintained here)
+  replicationManager = new ReplicationManager(state, PEERS, logger); // ADDED FOR LOG REPLICATION
 
   // Initialize election timeout
   electionTimeout = new ElectionTimeout(onElectionTimeout);
