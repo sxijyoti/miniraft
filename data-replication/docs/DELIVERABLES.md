@@ -17,7 +17,7 @@
 
 ---
 
-## 📋 FILE MANIFEST: What Was Added/Modified
+##  FILE MANIFEST: What Was Added/Modified
 
 ### NEW FILES:
 ```
@@ -89,7 +89,7 @@ Replication engine (new layer)
 
 ---
 
-## 🔄 Critical Data Flow: Client Write End-to-End
+##  Critical Data Flow: Client Write End-to-End
 
 ```
 1. CLIENT INITIATES WRITE
@@ -221,7 +221,7 @@ if (firstConflictIndex < currentLength) {
 
 ---
 
-## 🧪 Testing Scenarios Included
+##  Testing Scenarios Included
 
 ### Test Case 1: Basic Replication
 ```
@@ -263,7 +263,7 @@ if (firstConflictIndex < currentLength) {
 
 ---
 
-## 📊 Code Statistics
+##  Code Statistics
 
 ### Lines of Code Added/Modified:
 ```
@@ -397,7 +397,7 @@ Compatible - No breaking changes to election logic
 
 ---
 
-## 🎓 Learning Outcomes
+##  Learning Outcomes
 
 By implementing this, you've learned:
 1. How to track replication progress (nextIndex/matchIndex)

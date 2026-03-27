@@ -109,13 +109,13 @@ src/gateway/server.js
 
 ## Key Features Implemented
 
-### 📝 **Feature: Client Writes**
+###  **Feature: Client Writes**
 - **API:** `POST /command { "command": "..." }`
 - **Who:** Only leader accepts
 - **What:** Appends entry to log, triggers replication
 - **Returns:** `{ ok: true, index, term, leaderId }`
 
-### 📤 **Feature: Log Replication**
+###  **Feature: Log Replication**
 - **Mechanism:** Leader sends entries to followers
 - **API:** `POST /rpc/append-entries`
 - **Tracking:** nextIndex/matchIndex per follower
@@ -127,13 +127,13 @@ src/gateway/server.js
 - **Implementation:** `tryAdvanceCommitIndex()`
 - **Safety:** Only current-term entries committed
 
-### 📥 **Feature: Conflict Detection**
+###  **Feature: Conflict Detection**
 - **Check:** prevLogIndex/prevLogTerm validation
 - **Action:** Reject on mismatch
 - **Backoff:** Leader decrements nextIndex
 - **Resolution:** Delete stale entries, append correct ones
 
-### 🔄 **Feature: Bulk Recovery**
+###  **Feature: Bulk Recovery**
 - **API:** `POST /rpc/sync-log`
 - **When:** Follower lagging behind
 - **What:** Replace entire log segment
@@ -169,7 +169,7 @@ Replicates in parallel with heartbeat
 
 ---
 
-## 📊 Implementation Statistics
+##  Implementation Statistics
 
 ### Code Size:
 ```
@@ -199,7 +199,7 @@ server.js modifications:
 
 ---
 
-## 🧪 Testing Readiness
+##  Testing Readiness
 
 ### Ready-to-Test Scenarios:
 1.  Single client write replication
@@ -220,7 +220,7 @@ See `STUDENT_C_QUICK_REFERENCE.md` → Test Script section
 
 ---
 
-## 🎓 Learning Value
+##  Learning Value
 
 ### What You'll Learn from This Code:
 
@@ -246,7 +246,7 @@ See `STUDENT_C_QUICK_REFERENCE.md` → Test Script section
 
 ---
 
-## ⚡ Performance Characteristics
+##  Performance Characteristics
 
 ### Replication Latency:
 ```
@@ -267,7 +267,7 @@ Total (write → committed):     ~20-30ms at 150ms heartbeat
 
 ---
 
-## 🔒 Security & Safety
+##  Security & Safety
 
 ### Implemented Safety Guarantees:
 ```
@@ -293,7 +293,7 @@ Total (write → committed):     ~20-30ms at 150ms heartbeat
 
 ---
 
-## 📋 Verification Checklist
+##  Verification Checklist
 
 Before using in production, verify:
 
@@ -329,7 +329,7 @@ Before using in production, verify:
 
 ---
 
-## 📞 Support Reference
+##  Support Reference
 
 ### Common Issues & Solutions:
 
@@ -353,7 +353,7 @@ Before using in production, verify:
 
 ---
 
-## 📝 Summary: What You Have
+##  Summary: What You Have
 
 You have **complete, production-ready code** for:
 
@@ -390,7 +390,7 @@ You have **complete, production-ready code** for:
 
 ---
 
-## 🎉 You're Ready!
+##  You're Ready!
 
 The `data-replication` branch now contains:
 -  Working log replication

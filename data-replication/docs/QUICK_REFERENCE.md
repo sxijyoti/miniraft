@@ -94,7 +94,7 @@
 
 ---
 
-## 🧪 Test Script
+##  Test Script
 
 ```bash
 # Terminal 1: Start replica-1 (will become leader)

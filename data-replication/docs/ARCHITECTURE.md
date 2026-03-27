@@ -93,7 +93,7 @@
 
 ---
 
-## 📊 State Transitions: Election → Replication
+##  State Transitions: Election → Replication
 
 ```
 ╔════════════════════════════════════════════════════════════════════╗
@@ -160,7 +160,7 @@
 
 ---
 
-## 🔄 Complete Client Write Flow
+##  Complete Client Write Flow
 
 ```
 TIME    CLIENT                    LEADER                 FOLLOWER-1            FOLLOWER-2
@@ -205,14 +205,14 @@ TIME    CLIENT                    LEADER                 FOLLOWER-1            F
                                    │
                                    ├─ applyCommittedEntries()
                                    │  lastApplied = 0
-                                   │  ✅ Entry applied locally
+                                   │   Entry applied locally
 
-  4ms   Entry is COMMITTED ✅ (replicated to 2/3, applied to all)
+  4ms   Entry is COMMITTED  (replicated to 2/3, applied to all)
 ```
 
 ---
 
-## 🔐 Conflict Resolution Scenario
+##  Conflict Resolution Scenario
 
 ```
 SCENARIO: Follower has stale log entries
@@ -259,7 +259,7 @@ Follower: log = [entry0, entry1, entry2]
 
 ---
 
-## 📈 Scale: How It Works with 5 Replicas
+##  Scale: How It Works with 5 Replicas
 
 ```
 LEADER broadcasts to 4 followers:
@@ -328,7 +328,7 @@ Majority check (QUORUM_SIZE = 3):
 
 ---
 
-## 📋 Decision Tree: Is It Safe to Use This Data?
+##  Decision Tree: Is It Safe to Use This Data?
 
 ```
 CLIENT READS STATE:
@@ -341,7 +341,7 @@ CLIENT READS STATE:
   │       └─ NO:  ⏳ WAITING - Not yet committed
   │
   └─ NO (reading what leader has):
-      └─ ✅ SAFE - All replicas will have same
+      └─  SAFE - All replicas will have same
            (leader dominates; followers follow)
 ```
 
@@ -385,9 +385,9 @@ CLIENT READS STATE:
 ---
 
 **This architecture ensures:**
-✅ Strong consistency across replicas  
-✅ Failure tolerance (up to F failures with 2F+1 replicas)  
-✅ Leader safety (only leader can commit)  
-✅ Log safety (no entry loss after commit)  
-✅ State machine consistency (all apply in same order)  
+ Strong consistency across replicas  
+ Failure tolerance (up to F failures with 2F+1 replicas)  
+ Leader safety (only leader can commit)  
+ Log safety (no entry loss after commit)  
+ State machine consistency (all apply in same order)  
 

@@ -68,7 +68,7 @@ Example:
 
 ---
 
-### 🧪 **I want to test the system**
+###  **I want to test the system**
 **Time: 20 minutes**
 ```
 1. Follow: STUDENT_C_QUICK_REFERENCE.md → Test Script
@@ -120,20 +120,20 @@ Example:
 
 ### Document 1: **README_STUDENT_C.md** (This package overview)
 ```
-📝 Purpose:    Overview of all documentation
-📊 Length:     ~600 lines
+ Purpose:    Overview of all documentation
+ Length:     ~600 lines
 ⏱️  Read time: 10 minutes
 Best for:   Getting oriented, choosing which docs to read
-📋 Contains:   This index, quick start guide, checklist
+ Contains:   This index, quick start guide, checklist
 ```
 
 ### Document 2: **STUDENT_C_ARCHITECTURE.md** (Diagrams & flow)
 ```
-📝 Purpose:    Visual system architecture
-📊 Length:     ~500 lines
+ Purpose:    Visual system architecture
+ Length:     ~500 lines
 ⏱️  Read time: 15 minutes
 Best for:   Understanding how system works visually
-📋 Contains:   
+ Contains:   
    - System architecture diagram
    - State transition diagrams
    - Conflict resolution scenario
@@ -144,11 +144,11 @@ Best for:   Understanding how system works visually
 
 ### Document 3: **STUDENT_C_IMPLEMENTATION.md** (Complete guide)
 ```
-📝 Purpose:    Detailed implementation explanation
-📊 Length:     ~900 lines
+ Purpose:    Detailed implementation explanation
+ Length:     ~900 lines
 ⏱️  Read time: 30 minutes
 Best for:   Deep understanding of every feature
-📋 Contains:
+ Contains:
    - File structure
    - What's already implemented
    - RAFT role explanation
@@ -161,11 +161,11 @@ Best for:   Deep understanding of every feature
 
 ### Document 4: **STUDENT_C_QUICK_REFERENCE.md** (Lookup & test)
 ```
-📝 Purpose:    Fast reference for code locations & testing
-📊 Length:     ~300 lines
+ Purpose:    Fast reference for code locations & testing
+ Length:     ~300 lines
 ⏱️  Read time: 5 minutes (to skim), 20 minutes (to test)
 Best for:   Finding code, testing system, debugging
-📋 Contains:
+ Contains:
    - Exact line numbers for each feature
    - Code review checklist
    - Ready-to-run test script with curl commands
@@ -176,11 +176,11 @@ Best for:   Finding code, testing system, debugging
 
 ### Document 5: **STUDENT_C_DELIVERABLES.md** (Project summary)
 ```
-📝 Purpose:    What was delivered & project summary
-📊 Length:     ~600 lines
+ Purpose:    What was delivered & project summary
+ Length:     ~600 lines
 ⏱️  Read time: 15 minutes
 Best for:   Understanding scope and what was built
-📋 Contains:
+ Contains:
    - File manifest (new/modified/unchanged)
    - Architecture overview
    - Critical data flow
@@ -232,7 +232,7 @@ Best for:   Understanding scope and what was built
 
 ---
 
-## 📊 Document Complexity vs Detail
+##  Document Complexity vs Detail
 
 ```
 LOW             MEDIUM           HIGH
@@ -259,7 +259,7 @@ Best for:       Best for:       Best for:
 
 ---
 
-## 🎓 Learning Path: From Zero to Expert
+##  Learning Path: From Zero to Expert
 
 ### **Level 1: Beginner (30 minutes)**
 1. README_STUDENT_C.md (overview) - 10 min
@@ -334,10 +334,10 @@ Best for:       Best for:       Best for:
 
 ---
 
-## 📋 File Locations for Quick Access
+##  File Locations for Quick Access
 
 ```
-📂 student-c-implementation/
+ student-c-implementation/
 │
 ├── 📄 README.md (THIS FILE - START HERE)
 ├── 📄 code/
@@ -419,7 +419,7 @@ Best for:       Best for:       Best for:
 
 ---
 
-## 📞 Quick Help
+##  Quick Help
 
 ### Can't find something?
 → Use Ctrl+F to search all documents
@@ -439,7 +439,7 @@ Best for:       Best for:       Best for:
 
 ---
 
-## 🎉 You're All Set!
+##  You're All Set!
 
 You now have:
  Complete working code  

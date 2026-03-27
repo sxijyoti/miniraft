@@ -3,7 +3,7 @@
 
 ---
 
-## 📁 File Structure (Complete)
+##  File Structure (Complete)
 
 ```
 miniraft/
@@ -11,7 +11,7 @@ miniraft/
 │   ├── gateway/
 │   │   └── server.js                    # WebSocket gateway (Student D)
 │   ├── replica/
-│   │   └── server.js                    📝 MODIFIED - Log replication logic added
+│   │   └── server.js                     MODIFIED - Log replication logic added
 │   └── replicas/
 │       └── common/
 │           ├── constants.js             (Student B - unchanged)
@@ -19,7 +19,7 @@ miniraft/
 │           ├── electionTimeout.js       (Student B - unchanged)
 │           ├── logger.js                (Student B - unchanged)
 │           ├── raftState.js              Has commitIndex/lastApplied (Student B)
-│           └── replicationManager.js    📝 NEW ADDED - Log replication state tracking
+│           └── replicationManager.js     NEW ADDED - Log replication state tracking
 ```
 
 ### Key Files for Student C:
@@ -198,7 +198,7 @@ Response (Not Leader):
 
 ---
 
-## 🔄 Data Flow: Complete Example
+##  Data Flow: Complete Example
 
 ### **Scenario: Client writes "user:set-name:Alice"**
 
@@ -238,7 +238,7 @@ Step 6: All replicas now have entry applied
 
 ---
 
-## 📊 State Transitions During Replication
+##  State Transitions During Replication
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -314,7 +314,7 @@ replicationManager.matchIndex     // { peerUrl: matchIndex }
 
 ---
 
-## 📝 Execution Flow: Complete Code Path
+##  Execution Flow: Complete Code Path
 
 ### **When leader receives new command:**
 
@@ -364,7 +364,7 @@ app.post('/command', async (req, res) => {
 
 ---
 
-## 🔐 Safety Guarantees Implemented
+##  Safety Guarantees Implemented
 
 ### **1. Majority Commit Rule (RAFT Core)**
 - Entry committed only if replicated to majority
@@ -428,7 +428,7 @@ curl http://localhost:4003/state | jq .logLength
 
 ---
 
-## 🎓 How This Connects to Student B's Election Logic
+##  How This Connects to Student B's Election Logic
 
 ### **Independence:**
 - Election logic (Student B) completely separate from replication (Student C)
@@ -450,7 +450,7 @@ curl http://localhost:4003/state | jq .logLength
 
 ---
 
-## 📋 Summary: What Student C Owns
+##  Summary: What Student C Owns
 
 ### **New Code:**
 -  `replicationManager.js` - Leader-side state tracking
