@@ -1,6 +1,6 @@
 # QUICK REFERENCE: Student C - Data Replication Implementation
 
-## 📍 Where Each Feature is Implemented
+##  Where Each Feature is Implemented
 
 ### 1. LOG STORAGE & STATE MANAGEMENT
 **File:** `src/replicas/common/raftState.js`
