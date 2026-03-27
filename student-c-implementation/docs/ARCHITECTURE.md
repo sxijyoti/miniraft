@@ -1,6 +1,6 @@
-# STUDENT C: VISUAL ARCHITECTURE & DATA FLOW
+# VISUAL ARCHITECTURE & DATA FLOW
 
-## 🏗️ System Architecture
+##  System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -13,7 +13,7 @@
 │  │  │                                     │                 │   │
 │  │  │  ┌──────────────────────────────┐   │                 │   │
 │  │  │  │    RAFT STATE MACHINE       │   │                 │   │
-│  │  │  │  (Student B - Election)     │   │                 │   │
+│  │  │  │  (Election)                │   │                 │   │
 │  │  │  │                              │   │                 │   │
 │  │  │  │  ┌──────────────────────┐   │   │                 │   │
 │  │  │  │  │ ElectionManager      │   │   │                 │   │
@@ -25,7 +25,7 @@
 │  │  │                                     │                 │   │
 │  │  │  ┌──────────────────────────────┐   │                 │   │
 │  │  │  │    RAFT STATE (Persistent)  │   │                 │   │
-│  │  │  │  (Student B + Student C)    │   │                 │   │
+│  │  │  │  (Election + Replication)  │   │                 │   │
 │  │  │  │                              │   │                 │   │
 │  │  │  │  ┌──────────────────────┐   │   │                 │   │
 │  │  │  │  │ currentTerm: 1       │   │   │                 │   │
@@ -44,7 +44,7 @@
 │  │  │                                     │                 │   │
 │  │  │  ┌──────────────────────────────┐   │                 │   │
 │  │  │  │  REPLICATION ENGINE          │   │                 │   │
-│  │  │  │  (Student C - NEW)           │   │                 │   │
+│  │  │  │  (Replication)              │   │                 │   │
 │  │  │  │                              │   │                 │   │
 │  │  │  │  ┌──────────────────────┐   │   │                 │   │
 │  │  │  │  │ ReplicationManager   │   │   │                 │   │
@@ -97,7 +97,7 @@
 
 ```
 ╔════════════════════════════════════════════════════════════════════╗
-║        LEADERSHIP ELECTION (Student B)                             ║
+║        LEADERSHIP ELECTION (from raft-core)                       ║
 ║        ────────────────────────────────                            ║
 ║                                                                    ║
 ║  Follower → (timeout) → Candidate → (majority votes) → Leader    ║
@@ -111,7 +111,7 @@
            onElectionWon: becomeLeader()
                                 ↓
 ╔════════════════════════════════════════════════════════════════════╗
-║        REPLICATION ENGINE INITIALIZATION (Student C)               ║
+║        REPLICATION ENGINE INITIALIZATION                           ║
 ║        ─────────────────────────────────────────────               ║
 ║                                                                    ║
 ║  becomeLeader() {                                                  ║
@@ -131,7 +131,7 @@
         Every HEARTBEAT_INTERVAL (150ms):
                                 ↓
 ╔════════════════════════════════════════════════════════════════════╗
-║        REPLICATION LOOP (Student C)                                ║
+║        REPLICATION LOOP                                            ║
 ║        ──────────────────────────                                 ║
 ║                                                                    ║
 ║  broadcastHeartbeat() {                                            ║
@@ -231,7 +231,7 @@ STEP 1: Leader sends append-entries
 STEP 2: Follower validates
   Follower checks state.getEntryAt(1)
   Compares term: entry1_stale.term vs prevLogTerm
-  ❌ MISMATCH! (1 vs 1 - assume different terms)
+  MISMATCH! (1 vs 1 - assume different terms)
   Returns: { success: false }
 
 STEP 3: Leader backoffs
@@ -245,15 +245,15 @@ STEP 4: Leader retries
     entries: [entry1, entry2]
 
 STEP 5: Follower validates again
-  Check getEntryAt(0) → entry0 ✅
+  Check getEntryAt(0) → entry0
   Matches! prevLogTerm = 1
   Delete entries from index 1: log.slice(0, 1)
   Append new: [entry1, entry2]
-  ✅ SUCCESS!
+  SUCCESS!
 
 AFTER:
-  Leader:   log = [entry0, entry1, entry2] ✅
-  Follower: log = [entry0, entry1, entry2] ✅
+  Leader:   log = [entry0, entry1, entry2]
+Follower: log = [entry0, entry1, entry2]
             Logs converged!
 ```
 
@@ -281,7 +281,7 @@ Majority check (QUORUM_SIZE = 3):
   Take position [QUORUM_SIZE-1] = [2] = 5
   
   So: commitIndex can advance to 5
-  ✅ Only need 3/5 to have it (majority)
+  Only need 3/5 to have it (majority)
 ```
 
 ---
@@ -302,7 +302,7 @@ Majority check (QUORUM_SIZE = 3):
 │   → Candidate must have E to get majority votes    │
 │   → Therefore: E is never lost                     │
 │                                                     │
-│ Result: ✅ Strong durability guarantee            │
+| Result: Strong durability guarantee
 └─────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────┐
@@ -322,7 +322,7 @@ Majority check (QUORUM_SIZE = 3):
 │  4. If conflict, entries are deleted (not          │
 │     modified)                                      │
 │                                                     │
-│ Result: ✅ Log consistency guaranteed             │
+| Result: Log consistency guaranteed
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -337,7 +337,7 @@ CLIENT READS STATE:
   
   Did I write at index 5?
   ├─ YES: Check if (commitIndex ≥ 5)
-  │       └─ YES: ✅ SAFE - Entry is durable
+  │       └─ YES: SAFE - Entry is durable
   │       └─ NO:  ⏳ WAITING - Not yet committed
   │
   └─ NO (reading what leader has):
@@ -347,7 +347,7 @@ CLIENT READS STATE:
 
 ---
 
-## 🎯 Summary: Student C Architecture
+## Summary: System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -390,3 +390,4 @@ CLIENT READS STATE:
 ✅ Leader safety (only leader can commit)  
 ✅ Log safety (no entry loss after commit)  
 ✅ State machine consistency (all apply in same order)  
+

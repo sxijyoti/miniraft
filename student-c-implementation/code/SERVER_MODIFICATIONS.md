@@ -1,4 +1,4 @@
-# Server.js Modifications for Student C
+# Server.js Modifications for Log Replication
 
 This file documents all modifications made to `src/replica/server.js` for log replication and data consistency implementation.
 

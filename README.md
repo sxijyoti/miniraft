@@ -124,12 +124,16 @@ All configuration is in `.env` file (created from `.env.example` during setup):
 - **Logging**: DEBUG (set to 'raft' for detailed logs)
 - **Environment**: NODE_ENV (development/production)
 
-## Student Responsibilities
+## Team Responsibilities
 
-- **Student A** ✓: Infrastructure & Networking (docker-compose, Dockerfiles)
-- **Student B** ✓: RAFT Core & API (consensus, elections, heartbeats)
-- **Student C**: Data Storage (log replication, commit logic)
-- **Student D**: DevOps & Frontend (dashboard, drawing canvas, tests)
+**Completed:**
+- Infrastructure & Networking (docker-compose, Dockerfiles)
+- RAFT Core & API (consensus, elections, heartbeats)
+
+**Data Replication Implementation** (log replication, commit logic)
+
+**In Development:**
+- Gateway & Frontend (dashboard, drawing canvas, tests)
 
 ## Documentation
 
