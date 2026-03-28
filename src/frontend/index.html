@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MiniRAFT Drawing Board</title>
+    <style>
+      html,body { height:100%; margin:0; font-family:Arial,Helvetica,sans-serif }
+      #toolbar { padding:8px; background:#f3f3f3; display:flex; gap:8px; align-items:center }
+      #canvas { display:block; touch-action:none; border:1px solid #ddd; margin:8px auto; background:white }
+      #status { font-size:0.9rem; color:#444 }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <label>Color: <input id="color" type="color" value="#000000"></label>
+      <button id="clear">Clear</button>
+      <span id="status">Connecting…</span>
+    </div>
+
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <script src="/frontend/canvas.js"></script>
+    <script src="/frontend/websocketClient.js"></script>
+    <script>
+      const canvas = createCanvas(document.getElementById('canvas'));
+      const ws = createWebsocketClient('ws://' + location.host, {
+        onOpen: () => document.getElementById('status').textContent = 'Connected',
+        onClose: () => document.getElementById('status').textContent = 'Disconnected',
+        onStroke: (stroke) => canvas.drawRemoteStroke(stroke)
+      });
+
+      document.getElementById('color').addEventListener('input', (e) => {
+        canvas.setColor(e.target.value);
+      });
+
+      document.getElementById('clear').addEventListener('click', () => {
+        canvas.clear();
+      });
+
+      // When local stroke is finished, send to gateway
+      canvas.onStrokeComplete((stroke) => {
+        ws.sendStroke(stroke);
+      });
+    </script>
+  </body>
+</html>

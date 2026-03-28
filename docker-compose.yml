@@ -31,6 +31,7 @@ services:
       REPLICA_ID: "1"
       PORT: "4001"
       PEERS: "http://replica2:4002,http://replica3:4003"
+      GATEWAY_URL: "http://gateway:3000"
     ports:
       - "4001:4001"
     restart: always
@@ -51,6 +52,7 @@ services:
       REPLICA_ID: "2"
       PORT: "4002"
       PEERS: "http://replica1:4001,http://replica3:4003"
+      GATEWAY_URL: "http://gateway:3000"
     ports:
       - "4002:4002"
     restart: always
@@ -71,6 +73,7 @@ services:
       REPLICA_ID: "3"
       PORT: "4003"
       PEERS: "http://replica1:4001,http://replica2:4002"
+      GATEWAY_URL: "http://gateway:3000"
     ports:
       - "4003:4003"
     restart: always

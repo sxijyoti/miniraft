@@ -6,7 +6,10 @@
   "main": "src/gateway/server.js",
   "scripts": {
     "start:gateway": "node src/gateway/server.js",
-    "start:replica": "node src/replica/server.js"
+    "start:replica": "node src/replica/server.js",
+    "test:smoke": "bash test-raft.sh",
+    "test:load": "bash tests/load-tests.sh",
+    "test:failure": "bash tests/failure-tests.sh"
   },
   "dependencies": {
     "express": "^4.21.2",

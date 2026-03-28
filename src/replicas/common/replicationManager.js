@@ -122,6 +122,31 @@ class ReplicationManager {
       const logEntry = this.state.getEntryAt(this.state.lastApplied);
       if (logEntry) {
         this.logger.info(`Applying log entry ${this.state.lastApplied}: ${JSON.stringify(logEntry)}`);
+        // Notify gateway about committed strokes (non-blocking)
+        try {
+          const gateway = process.env.GATEWAY_URL || process.env.GATEWAY_COMMIT_URL || 'http://localhost:3000';
+          if (logEntry.command && logEntry.command.type === 'stroke') {
+            (async () => {
+              try {
+                const body = Object.assign({}, logEntry.command || {}, {
+                  index: this.state.lastApplied,
+                  term: this.state.currentTerm,
+                  replicaId: this.state.replicaId
+                });
+                await fetch(`${gateway}/commit`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(body)
+                });
+                this.logger.debug(`Notified gateway ${gateway} of committed stroke idx=${this.state.lastApplied}`);
+              } catch (err) {
+                this.logger.warn(`Failed to notify gateway: ${err.message}`);
+              }
+            })();
+          }
+        } catch (err) {
+          this.logger.warn(`gateway notify error: ${err.message}`);
+        }
       }
     }
   }
