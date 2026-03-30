@@ -38,6 +38,7 @@ class LeaderRouter {
 
     // Try current leader first
     const tryPost = async (leaderUrl) => {
+      this.logger.event('ROUTE', { action: 'post_attempt', to: leaderUrl });
       try {
         const res = await Promise.race([
           fetch(`${leaderUrl}/command`, {
@@ -49,6 +50,7 @@ class LeaderRouter {
           const txt = await res.text().catch(() => '');
           throw new Error(`status=${res.status} ${txt}`);
         }
+        this.logger.event('ROUTE', { action: 'post_success', to: leaderUrl });
         return await res.json();
       } catch (err) {
         this.logger.warn(`sendCommand -> ${leaderUrl} failed: ${err.message}`);
@@ -61,6 +63,7 @@ class LeaderRouter {
         return await tryPost(this.currentLeader);
       } catch (err) {
         // fallthrough to discovery
+        this.logger.event('ROUTE', { action: 'failover', reason: err.message });
       }
     }
 
@@ -73,6 +76,7 @@ class LeaderRouter {
       try {
         const result = await tryPost(r);
         this.currentLeader = r; // accept as leader
+        this.logger.event('ROUTE', { action: 'assume_leader', leader: r });
         return result;
       } catch (err) {
         continue;

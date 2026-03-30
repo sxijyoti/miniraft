@@ -48,6 +48,10 @@ app.get('/cluster', (_req, res) => {
   res.json({ replicas: REPLICA_ENDPOINTS });
 });
 
+app.get('/clients', (_req, res) => {
+  return res.json({ clients: wssAdapter ? wssAdapter.clientCount() : 0 });
+});
+
 const server = http.createServer(app);
 
 // initialize websocket server and adapter
@@ -55,9 +59,20 @@ let wssAdapter = null;
 const wss = initWebsocket(server, leaderRouter, logger);
 wssAdapter = wss;
 
-// Periodic leader discovery to keep routing fresh
-setInterval(() => {
-  leaderRouter.discoverLeader().catch((err) => logger.warn('discoverLeader err: ' + err.message));
+// Periodic leader discovery to keep routing fresh and notify clients on changes
+setInterval(async () => {
+  const oldLeader = leaderRouter.getLeader();
+  try {
+    const discovered = await leaderRouter.discoverLeader();
+    if (discovered && discovered !== oldLeader) {
+      logger.event('ROUTE', { action: 'leader_changed', leader: discovered });
+      if (wssAdapter) {
+        try { wssAdapter.broadcast({ type: 'leader', leader: discovered }); } catch (e) { logger.warn('broadcast leader change failed: ' + e.message); }
+      }
+    }
+  } catch (err) {
+    logger.warn('discoverLeader err: ' + err.message);
+  }
 }, 5000);
 
 server.listen(PORT, '0.0.0.0', () => {

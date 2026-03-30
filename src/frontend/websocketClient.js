@@ -1,5 +1,5 @@
 function createWebsocketClient(wsUrl, handlers = {}) {
-  const { onOpen = () => {}, onClose = () => {}, onStroke = () => {} } = handlers;
+  const { onOpen = () => {}, onClose = () => {}, onStroke = () => {}, onInfo = () => {} } = handlers;
   let ws = null;
   let backoff = 500;
   let shouldRun = true;
@@ -16,9 +16,13 @@ function createWebsocketClient(wsUrl, handlers = {}) {
     ws.addEventListener('message', (ev) => {
       try {
         const payload = JSON.parse(ev.data);
-        if (payload && payload.type === 'stroke') {
+        if (!payload) return;
+        if (payload.type === 'stroke') {
           onStroke(payload);
+          return;
         }
+        // Other informational messages (queued, error, leader updates)
+        onInfo(payload);
       } catch (err) {
         console.warn('[ws] invalid message', err);
       }

@@ -7,6 +7,9 @@ services:
     environment:
       PORT: "3000"
       REPLICA_ENDPOINTS: "http://replica1:4001,http://replica2:4002,http://replica3:4003"
+      DEV_MODE: "true"
+    volumes:
+      - ./src:/app/src:cached
     ports:
       - "3000:3000"
     restart: always
@@ -32,6 +35,10 @@ services:
       PORT: "4001"
       PEERS: "http://replica2:4002,http://replica3:4003"
       GATEWAY_URL: "http://gateway:3000"
+      DEV_MODE: "true"
+    volumes:
+      - ./replica1/src:/app/src:cached
+      - ./data/replica1:/app/data
     ports:
       - "4001:4001"
     restart: always
@@ -53,6 +60,10 @@ services:
       PORT: "4002"
       PEERS: "http://replica1:4001,http://replica3:4003"
       GATEWAY_URL: "http://gateway:3000"
+      DEV_MODE: "true"
+    volumes:
+      - ./replica2/src:/app/src:cached
+      - ./data/replica2:/app/data
     ports:
       - "4002:4002"
     restart: always
@@ -74,6 +85,10 @@ services:
       PORT: "4003"
       PEERS: "http://replica1:4001,http://replica2:4002"
       GATEWAY_URL: "http://gateway:3000"
+      DEV_MODE: "true"
+    volumes:
+      - ./replica3/src:/app/src:cached
+      - ./data/replica3:/app/data
     ports:
       - "4003:4003"
     restart: always

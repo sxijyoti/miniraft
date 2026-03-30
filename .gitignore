@@ -31,6 +31,11 @@ Thumbs.db
 logs/
 *.log
 .tmp/
+data/
+data/*/
+
+# Docker volumes
+.docker-volumes/
 
 # Dependencies
 dist/

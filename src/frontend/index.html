@@ -16,6 +16,8 @@
       <label>Color: <input id="color" type="color" value="#000000"></label>
       <button id="clear">Clear</button>
       <span id="status">Connecting…</span>
+      <span style="margin-left:12px">Leader: <strong id="leader">unknown</strong></span>
+      <span style="margin-left:12px">Clients: <strong id="clients">0</strong></span>
     </div>
 
     <canvas id="canvas" width="800" height="600"></canvas>
@@ -24,10 +26,44 @@
     <script src="/frontend/websocketClient.js"></script>
     <script>
       const canvas = createCanvas(document.getElementById('canvas'));
+
+      function updateLeaderAndClients() {
+        fetch('/leader').then(r => r.json()).then(j => {
+          const leaderText = j.leader || 'unknown';
+          document.getElementById('leader').textContent = leaderText.replace(/^http:\/\//, '');
+        }).catch(() => {});
+
+        fetch('/clients').then(r => r.json()).then(j => {
+          document.getElementById('clients').textContent = j.clients || 0;
+        }).catch(() => {});
+      }
+
       const ws = createWebsocketClient('ws://' + location.host, {
-        onOpen: () => document.getElementById('status').textContent = 'Connected',
-        onClose: () => document.getElementById('status').textContent = 'Disconnected',
-        onStroke: (stroke) => canvas.drawRemoteStroke(stroke)
+        onOpen: () => {
+          document.getElementById('status').textContent = 'Connected';
+          console.log('[ui] websocket open');
+        },
+        onClose: () => {
+          document.getElementById('status').textContent = 'Disconnected';
+          console.log('[ui] websocket closed');
+        },
+        onStroke: (stroke) => {
+          console.log('[ui] committed stroke received', stroke);
+          canvas.drawRemoteStroke(stroke);
+        },
+        onInfo: (msg) => {
+          console.log('[ui] info message', msg);
+          // handle queued ack
+          if (!msg) return;
+          if (msg.type === 'queued') {
+            // temporarily flash status
+            const prev = document.getElementById('status').textContent;
+            document.getElementById('status').textContent = 'Queued';
+            setTimeout(() => document.getElementById('status').textContent = prev, 800);
+          } else if (msg.type === 'leader') {
+            document.getElementById('leader').textContent = (msg.leader || 'unknown').replace(/^http:\/\//, '');
+          }
+        }
       });
 
       document.getElementById('color').addEventListener('input', (e) => {
@@ -40,8 +76,15 @@
 
       // When local stroke is finished, send to gateway
       canvas.onStrokeComplete((stroke) => {
+        // draw locally immediately
+        canvas.drawRemoteStroke(stroke);
+        // send to gateway for replication
         ws.sendStroke(stroke);
       });
+
+      // Poll leader/client counts periodically
+      setInterval(updateLeaderAndClients, 2000);
+      updateLeaderAndClients();
     </script>
   </body>
 </html>
