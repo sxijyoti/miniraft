@@ -3,7 +3,7 @@ Distributed Real Time Drawing Board
 
 A fault-tolerant, multi-replica drawing application using RAFT consensus protocol for distributed state management.
 
-**Cross-platform compatible:** Works identically on Linux, macOS, and Windows. See [CROSS_PLATFORM.md](./CROSS_PLATFORM.md) for setup details.
+<img width="1470" height="808" alt="image" src="https://github.com/user-attachments/assets/678f9979-af6e-4a6d-a805-2d4388c78d68" />
 
 ## Project Structure
 
