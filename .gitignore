@@ -50,3 +50,5 @@ build/
 # System
 .env
 .envrc
+CLOUD_CONCEPTS_VIVA.md
+DOCKER_DEPLOYMENT_VERIFICATION.md

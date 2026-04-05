@@ -4,6 +4,7 @@ function createCanvas(canvasEl) {
   let points = [];
   let color = '#000000';
   let strokeCallback = () => {};
+  const strokeHistory = [];
 
   // Hi-DPI support
   function resizeForHiDPI() {
@@ -16,17 +17,37 @@ function createCanvas(canvasEl) {
     ctx.scale(dpr, dpr);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.lineWidth = 2.5;
   }
 
-  function setColor(c) { color = c; }
+  function setColor(c) { 
+    color = c;
+    ctx.globalCompositeOperation = (c === '#FFFFFF' || c === '#FFF') ? 'destination-out' : 'source-over';
+  }
 
   function clear() {
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    strokeHistory.length = 0;
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    ctx.globalCompositeOperation = 'source-over';
+    strokeHistory.forEach(stroke => {
+      drawStrokeImmediate(stroke.points, stroke.color);
+    });
   }
 
   function drawLineSegment(a, b, strokeColor) {
-    ctx.strokeStyle = strokeColor || color;
-    ctx.lineWidth = 2;
+    const isEraser = strokeColor === '#FFFFFF' || strokeColor === '#FFF';
+    if (isEraser) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = strokeColor || color;
+    }
+    ctx.lineWidth = isEraser ? 15 : 2.5;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -37,10 +58,17 @@ function createCanvas(canvasEl) {
     for (let i = 1; i < pts.length; i++) {
       drawLineSegment(pts[i - 1], pts[i], strokeColor);
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function drawRemoteStroke(stroke) {
     if (!stroke || !Array.isArray(stroke.points)) return;
+    strokeHistory.push({
+      type: 'stroke',
+      points: stroke.points.slice(),
+      color: stroke.color || '#000',
+      timestamp: stroke.timestamp || Date.now()
+    });
     drawStrokeImmediate(stroke.points, stroke.color || '#000');
   }
 
@@ -58,19 +86,29 @@ function createCanvas(canvasEl) {
     if (!drawing) return;
     points.push(pt);
     const len = points.length;
-    if (len > 1) drawLineSegment(points[len - 2], points[len - 1]);
+    if (len > 1) drawLineSegment(points[len - 2], points[len - 1], color);
   }
 
   function endStroke() {
     if (!drawing) return;
     drawing = false;
-    const stroke = {
-      type: 'stroke',
-      points: points.slice(),
-      color,
-      timestamp: Date.now()
-    };
-    strokeCallback(stroke);
+    if (points.length > 0) {
+      const stroke = {
+        type: 'stroke',
+        points: points.slice(),
+        color,
+        timestamp: Date.now()
+      };
+      strokeHistory.push(stroke);
+      strokeCallback(stroke);
+    }
+  }
+
+  function undo() {
+    if (strokeHistory.length > 0) {
+      strokeHistory.pop();
+      redraw();
+    }
   }
 
   // Events
@@ -98,9 +136,8 @@ function createCanvas(canvasEl) {
     setColor,
     clear,
     drawRemoteStroke,
-    onStrokeComplete(cb) { strokeCallback = cb; },
-    // compatibility helpers used in index.html
-    drawRemoteStroke: drawRemoteStroke
+    undo,
+    onStrokeComplete(cb) { strokeCallback = cb; }
   };
 }
 
