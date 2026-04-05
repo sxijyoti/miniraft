@@ -1,0 +1,54 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Node.js
+node_modules/
+npm-debug.log
+npm-debug.log.*
+yarn-debug.log
+yarn-error.log
+*.tgz
+package-lock.json
+yarn.lock
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+
+# Logs and Runtime
+logs/
+*.log
+.tmp/
+data/
+data/*/
+
+# Docker volumes
+.docker-volumes/
+
+# Dependencies
+dist/
+build/
+
+# IDE
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.sublime-workspace
+
+# System
+.env
+.envrc
+CLOUD_CONCEPTS_VIVA.md
+DOCKER_DEPLOYMENT_VERIFICATION.md
