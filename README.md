@@ -156,13 +156,4 @@
  - The gateway statically serves files from `src/frontend`, so editing frontend assets and restarting the gateway (or using `nodemon`) is sufficient for most UI changes.
  - The gateway maintains a small in-memory queue to hold strokes when there is no available leader; queued items are flushed periodically.
 
- ---
-
- ## Contributing
-
- - Fork the repository and open a pull request with a clear description.
- - Run unit/integration tests where applicable and ensure Docker Compose runs locally.
- - Add documentation updates to this README or `docs/` as needed.
-
- ---
 
