@@ -4,6 +4,7 @@ function createCanvas(canvasEl) {
   let points = [];
   let color = '#000000';
   let strokeCallback = () => {};
+  let interactive = true;
   const strokeHistory = [];
 
   // Hi-DPI support
@@ -78,19 +79,20 @@ function createCanvas(canvasEl) {
   }
 
   function startPoint(pt) {
+    if (!interactive) return;
     drawing = true;
     points = [pt];
   }
 
   function movePoint(pt) {
-    if (!drawing) return;
+    if (!drawing || !interactive) return;
     points.push(pt);
     const len = points.length;
     if (len > 1) drawLineSegment(points[len - 2], points[len - 1], color);
   }
 
   function endStroke() {
-    if (!drawing) return;
+    if (!drawing || !interactive) return;
     drawing = false;
     if (points.length > 0) {
       const stroke = {
@@ -102,6 +104,11 @@ function createCanvas(canvasEl) {
       strokeHistory.push(stroke);
       strokeCallback(stroke);
     }
+  }
+
+  function setInteractive(enabled) {
+    interactive = Boolean(enabled);
+    canvasEl.style.pointerEvents = interactive ? 'auto' : 'none';
   }
 
   function undo() {
@@ -137,6 +144,7 @@ function createCanvas(canvasEl) {
     clear,
     drawRemoteStroke,
     undo,
+    setInteractive,
     onStrokeComplete(cb) { strokeCallback = cb; }
   };
 }

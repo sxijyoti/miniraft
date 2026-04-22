@@ -810,7 +810,13 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // Initialize election timeout
   electionTimeout = new ElectionTimeout(onElectionTimeout);
-  electionTimeout.reset(); // Start election timeout on startup
+  const startupElectionDelay = 150 + Math.floor(Math.random() * 600);
+  setTimeout(() => {
+    if (electionTimeout) {
+      electionTimeout.reset();
+      logger.info(`Initial election timeout armed after ${startupElectionDelay}ms`);
+    }
+  }, startupElectionDelay);
 
   // Periodic peer health check
   pingPeers();

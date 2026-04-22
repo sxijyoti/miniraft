@@ -426,6 +426,19 @@ app.post('/rpc/append-entries', (req, res) => {
       const logEntry = state.getEntryAt(state.lastApplied);
       if (logEntry) {
         logger.info(`Applied log entry ${state.lastApplied}: ${JSON.stringify(logEntry)}`);
+        
+        if (logEntry.command && logEntry.command.type === 'stroke') {
+          try {
+            const body = Object.assign({}, logEntry.command, {
+              index: state.lastApplied,
+              term: state.currentTerm,
+              replicaId: state.replicaId
+            });
+            broadcastStroke(body);
+          } catch (err) {
+            logger.warn(`Failed to broadcast committed stroke locally: ${err.message}`);
+          }
+        }
       }
     }
   };
@@ -528,29 +541,11 @@ app.post('/rpc/forward-stroke', (req, res) => {
     const entryIndex = state.appendEntry(payload);
     logger.info(`[LEADER] Received forwarded stroke, appended at index ${entryIndex}`);
     
-    // Broadcast to own clients
-    broadcastStroke(payload);
-    
-    // Replicate to followers
+    // Replicate to followers (and broadcast to own clients once committed)
     if (replicationManager) {
       replicationManager.replicateToAll().catch(err => {
         logger.warn(`Replication error: ${err.message}`);
       });
-    }
-    
-    // Notify followers to broadcast
-    for (const peerUrl of PEERS) {
-      (async () => {
-        try {
-          await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        } catch (err) {
-          logger.warn(`Failed to broadcast to ${peerUrl}: ${err.message}`);
-        }
-      })();
     }
   }
   
@@ -696,6 +691,13 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     wsClients.delete(ws);
     logger.info(`[WS] Client disconnected (${wsClients.size})`);
+    
+    // As per requirement: "on closing of tab, it should kill the replica"
+    // To ensure 1:1 mapping behavior, if the UI disconnects, kill the process.
+    if (wsClients.size === 0) {
+      logger.info(`[SHUTDOWN] UI tab closed. Terminating replica to trigger failure/re-election.`);
+      process.exit(1); 
+    }
   });
 
   ws.on('message', async (data) => {
@@ -739,27 +741,9 @@ wss.on('connection', (ws) => {
         const entryIndex = state.appendEntry(payload);
         logger.info(`[LEADER] Appended stroke to log at index ${entryIndex}`);
 
-        // Broadcast to own clients immediately
-        broadcastStroke(payload);
-
         // Send to followers via replication
         if (replicationManager) {
           await replicationManager.replicateToAll();
-        }
-
-        // Notify followers to broadcast to their clients
-        for (const peerUrl of PEERS) {
-          (async () => {
-            try {
-              await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-            } catch (err) {
-              logger.warn(`Failed to broadcast stroke to ${peerUrl}: ${err.message}`);
-            }
-          })();
         }
       }
     } catch (err) {
@@ -806,11 +790,17 @@ server.listen(PORT, '0.0.0.0', () => {
   electionManager = new ElectionManager(state, PEERS, logger);
 
   // Initialize replication manager (leader replication state is maintained here)
-  replicationManager = new ReplicationManager(state, PEERS, logger); // ADDED FOR LOG REPLICATION
+  replicationManager = new ReplicationManager(state, PEERS, logger, broadcastStroke); // ADDED FOR LOG REPLICATION
 
   // Initialize election timeout
   electionTimeout = new ElectionTimeout(onElectionTimeout);
-  electionTimeout.reset(); // Start election timeout on startup
+  const startupElectionDelay = 150 + Math.floor(Math.random() * 600);
+  setTimeout(() => {
+    if (electionTimeout) {
+      electionTimeout.reset();
+      logger.info(`Initial election timeout armed after ${startupElectionDelay}ms`);
+    }
+  }, startupElectionDelay);
 
   // Periodic peer health check
   pingPeers();

@@ -588,6 +588,20 @@
     const players = {};
     let playerCount = 0;
     let currentColor = '#000000';
+    let drawingEnabled = false;
+
+    function syncDrawingAvailability() {
+      const shouldEnableDrawing = playerCount >= 2;
+      if (shouldEnableDrawing === drawingEnabled) {
+        return;
+      }
+
+      drawingEnabled = shouldEnableDrawing;
+      canvas.setInteractive(drawingEnabled);
+      document.getElementById('canvas').style.cursor = drawingEnabled
+        ? "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M6 4l12 12M18 4l-12 12\"/></svg>') 12 12, auto"
+        : 'not-allowed';
+    }
 
     // Initialize color swatches
     document.querySelectorAll('.color-swatch').forEach(swatch => {
@@ -707,6 +721,10 @@
 
     // Local stroke handling
     canvas.onStrokeComplete((stroke) => {
+      if (!drawingEnabled) {
+        return;
+      }
+
       // Always draw locally immediately
       canvas.drawRemoteStroke(stroke);
       
@@ -724,6 +742,7 @@
             playerCount = count;
             document.getElementById('playerCount').textContent = count;
             updatePlayerAvatars(count);
+            syncDrawingAvailability();
           }
         })
         .catch(() => {});
@@ -754,6 +773,7 @@
     // Initial setup
     canvas.setColor(currentColor);
     updatePlayerAvatars(0);
+    syncDrawingAvailability();
 
     // MODAL FUNCTIONALITY
     const clearModal = document.getElementById('clearModal');

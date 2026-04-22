@@ -1,25 +1,4 @@
 services:
-  gateway:
-    container_name: gateway
-    build:
-      context: .
-      dockerfile: infra/docker/Dockerfile.gateway
-    environment:
-      PORT: "3000"
-      REPLICA_ENDPOINTS: "http://replica1:4001,http://replica2:4002,http://replica3:4003"
-      DEV_MODE: "true"
-    volumes:
-      - ./src:/app/src:cached
-    ports:
-      - "3000:3000"
-    restart: always
-    depends_on:
-      - replica1
-      - replica2
-      - replica3
-    networks:
-      - raft-network
-
   replica1:
     container_name: replica1
     build:
@@ -29,15 +8,14 @@ services:
       REPLICA_ID: "1"
       PORT: "4001"
       PEERS: "http://replica2:4002,http://replica3:4003"
-      GATEWAY_URL: "http://gateway:3000"
-      DEV_MODE: "true"
+      DEV_MODE: "false"
     volumes:
       - ./replica1/src:/app/src:cached
       - ./src/frontend:/app/src/frontend:cached
       - ./data/replica1:/app/data
     ports:
       - "4001:4001"
-    restart: always
+    restart: "no"
     networks:
       - raft-network
 
@@ -50,15 +28,14 @@ services:
       REPLICA_ID: "2"
       PORT: "4002"
       PEERS: "http://replica1:4001,http://replica3:4003"
-      GATEWAY_URL: "http://gateway:3000"
-      DEV_MODE: "true"
+      DEV_MODE: "false"
     volumes:
       - ./replica2/src:/app/src:cached
       - ./src/frontend:/app/src/frontend:cached
       - ./data/replica2:/app/data
     ports:
       - "4002:4002"
-    restart: always
+    restart: "no"
     networks:
       - raft-network
 
@@ -71,15 +48,14 @@ services:
       REPLICA_ID: "3"
       PORT: "4003"
       PEERS: "http://replica1:4001,http://replica2:4002"
-      GATEWAY_URL: "http://gateway:3000"
-      DEV_MODE: "true"
+      DEV_MODE: "false"
     volumes:
       - ./replica3/src:/app/src:cached
       - ./src/frontend:/app/src/frontend:cached
       - ./data/replica3:/app/data
     ports:
       - "4003:4003"
-    restart: always
+    restart: "no"
     networks:
       - raft-network
 
