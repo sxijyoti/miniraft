@@ -328,15 +328,25 @@ app.post('/rpc/request-vote', (req, res) => {
 
   let voteGranted = false;
 
+  // RAFT §5.4.1 — log up-to-dateness check:
+  // Candidate's log must be at least as up-to-date as ours before we grant a vote.
+  // Compare by lastLogTerm first; if equal, compare by lastLogIndex.
+  const { lastLogIndex: myLastIdx, lastLogTerm: myLastTerm } = state.getLastLogIndexAndTerm();
+  const candidateLogIsUpToDate =
+    lastLogTerm > myLastTerm ||
+    (lastLogTerm === myLastTerm && lastLogIndex >= myLastIdx);
+
   // Vote if:
   // 1. Term matches current term
-  // 2. Haven't voted yet OR voted for same candidate
-  if (term === state.currentTerm && state.vote(candidateId)) {
+  // 2. Candidate log is at least as up-to-date as ours
+  // 3. Haven't voted yet OR voted for same candidate
+  if (term === state.currentTerm && candidateLogIsUpToDate && state.vote(candidateId)) {
     voteGranted = true;
     logger.rpc('SEND', 'request-vote', 'granted', `to=${candidateId}`);
-    electionTimeout.reset(); // Reset timeout after receiving vote request
+    electionTimeout.reset(); // Reset timeout after granting vote
   } else {
-    logger.rpc('SEND', 'request-vote', 'denied', `to=${candidateId}`);
+    const reason = !candidateLogIsUpToDate ? 'stale log' : 'already voted';
+    logger.rpc('SEND', 'request-vote', 'denied', `to=${candidateId} reason=${reason}`);
   }
 
   return res.json({

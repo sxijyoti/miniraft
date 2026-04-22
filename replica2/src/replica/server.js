@@ -14,7 +14,6 @@ const app = express();
 app.use(express.json());
 
 // Serve static frontend files
-// The frontend is mounted at /app/src/frontend in the container
 const frontendPath = path.join(__dirname, '../frontend');
 app.use('/frontend', express.static(frontendPath));
 app.get('/', (_req, res) => res.sendFile(path.join(frontendPath, 'index.html')));
@@ -329,15 +328,25 @@ app.post('/rpc/request-vote', (req, res) => {
 
   let voteGranted = false;
 
+  // RAFT §5.4.1 — log up-to-dateness check:
+  // Candidate's log must be at least as up-to-date as ours before we grant a vote.
+  // Compare by lastLogTerm first; if equal, compare by lastLogIndex.
+  const { lastLogIndex: myLastIdx, lastLogTerm: myLastTerm } = state.getLastLogIndexAndTerm();
+  const candidateLogIsUpToDate =
+    lastLogTerm > myLastTerm ||
+    (lastLogTerm === myLastTerm && lastLogIndex >= myLastIdx);
+
   // Vote if:
   // 1. Term matches current term
-  // 2. Haven't voted yet OR voted for same candidate
-  if (term === state.currentTerm && state.vote(candidateId)) {
+  // 2. Candidate log is at least as up-to-date as ours
+  // 3. Haven't voted yet OR voted for same candidate
+  if (term === state.currentTerm && candidateLogIsUpToDate && state.vote(candidateId)) {
     voteGranted = true;
     logger.rpc('SEND', 'request-vote', 'granted', `to=${candidateId}`);
-    electionTimeout.reset(); // Reset timeout after receiving vote request
+    electionTimeout.reset(); // Reset timeout after granting vote
   } else {
-    logger.rpc('SEND', 'request-vote', 'denied', `to=${candidateId}`);
+    const reason = !candidateLogIsUpToDate ? 'stale log' : 'already voted';
+    logger.rpc('SEND', 'request-vote', 'denied', `to=${candidateId} reason=${reason}`);
   }
 
   return res.json({
@@ -427,6 +436,19 @@ app.post('/rpc/append-entries', (req, res) => {
       const logEntry = state.getEntryAt(state.lastApplied);
       if (logEntry) {
         logger.info(`Applied log entry ${state.lastApplied}: ${JSON.stringify(logEntry)}`);
+        
+        if (logEntry.command && logEntry.command.type === 'stroke') {
+          try {
+            const body = Object.assign({}, logEntry.command, {
+              index: state.lastApplied,
+              term: state.currentTerm,
+              replicaId: state.replicaId
+            });
+            broadcastStroke(body);
+          } catch (err) {
+            logger.warn(`Failed to broadcast committed stroke locally: ${err.message}`);
+          }
+        }
       }
     }
   };
@@ -489,22 +511,30 @@ app.post('/rpc/heartbeat', (req, res) => {
   });
 });
 
-app.post('/rpc/broadcast-stroke', (req, res) => {
-  const stroke = req.body;
-  
-  if (!stroke) {
-    return res.status(400).json({ error: 'stroke payload required' });
-  }
-
-  logger.info(`[RPC] Received broadcast-stroke from leader, relaying to ${wsClients.size} clients`);
-  
-  // Broadcast to all connected clients on this replica
-  broadcastStroke(stroke);
-  
-  return res.json({
-    ok: true,
-    clientsNotified: wsClients.size
+// Broadcast stroke to all connected WebSocket clients
+function broadcastStroke(stroke) {
+  const message = JSON.stringify({
+    type: 'stroke',
+    ...stroke
   });
+  
+  for (const client of wsClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+
+app.post('/rpc/broadcast-stroke', (req, res) => {
+  const payload = req.body;
+  logger.rpc('RECV', 'broadcast-stroke', `type=${payload?.type}`);
+  
+  if (payload && payload.type === 'stroke') {
+    // Relay stroke to all connected clients on this replica
+    broadcastStroke(payload);
+  }
+  
+  res.json({ ok: true });
 });
 
 app.post('/rpc/forward-stroke', (req, res) => {
@@ -521,34 +551,17 @@ app.post('/rpc/forward-stroke', (req, res) => {
     const entryIndex = state.appendEntry(payload);
     logger.info(`[LEADER] Received forwarded stroke, appended at index ${entryIndex}`);
     
-    // Broadcast to own clients
-    broadcastStroke(payload);
-    
-    // Replicate to followers
+    // Replicate to followers (and broadcast to own clients once committed)
     if (replicationManager) {
       replicationManager.replicateToAll().catch(err => {
         logger.warn(`Replication error: ${err.message}`);
       });
     }
-    
-    // Notify followers to broadcast
-    for (const peerUrl of PEERS) {
-      (async () => {
-        try {
-          await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-        } catch (err) {
-          logger.warn(`Failed to broadcast to ${peerUrl}: ${err.message}`);
-        }
-      })();
-    }
   }
   
-  return res.json({ ok: true });
+  res.json({ ok: true });
 });
+
 
 app.post('/rpc/sync-log', (req, res) => {
   const { term, leaderId, fromIndex = 0, log = [] } = req.body || {};
@@ -677,20 +690,6 @@ function broadcastRaftState() {
   }
 }
 
-// Broadcast stroke to all connected clients
-function broadcastStroke(stroke) {
-  const message = JSON.stringify({
-    type: 'stroke',
-    ...stroke
-  });
-  
-  for (const client of wsClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  }
-}
-
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
   wsClients.add(ws);
@@ -702,12 +701,18 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     wsClients.delete(ws);
     logger.info(`[WS] Client disconnected (${wsClients.size})`);
+    
+    // As per requirement: "on closing of tab, it should kill the replica"
+    // To ensure 1:1 mapping behavior, if the UI disconnects, kill the process.
+    if (wsClients.size === 0) {
+      logger.info(`[SHUTDOWN] UI tab closed. Terminating replica to trigger failure/re-election.`);
+      process.exit(1); 
+    }
   });
 
   ws.on('message', async (data) => {
     try {
       const payload = JSON.parse(data.toString());
-      logger.info(`[WS] Received message: type=${payload?.type}, role=${state.role}`);
       
       // Handle stroke from client (drawing command)
       if (payload && payload.type === 'stroke') {
@@ -746,27 +751,9 @@ wss.on('connection', (ws) => {
         const entryIndex = state.appendEntry(payload);
         logger.info(`[LEADER] Appended stroke to log at index ${entryIndex}`);
 
-        // Broadcast to own clients immediately
-        broadcastStroke(payload);
-
         // Send to followers via replication
         if (replicationManager) {
           await replicationManager.replicateToAll();
-        }
-
-        // Notify followers to broadcast to their clients
-        for (const peerUrl of PEERS) {
-          (async () => {
-            try {
-              await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-              });
-            } catch (err) {
-              logger.warn(`Failed to broadcast stroke to ${peerUrl}: ${err.message}`);
-            }
-          })();
         }
       }
     } catch (err) {
@@ -813,7 +800,7 @@ server.listen(PORT, '0.0.0.0', () => {
   electionManager = new ElectionManager(state, PEERS, logger);
 
   // Initialize replication manager (leader replication state is maintained here)
-  replicationManager = new ReplicationManager(state, PEERS, logger); // ADDED FOR LOG REPLICATION
+  replicationManager = new ReplicationManager(state, PEERS, logger, broadcastStroke); // ADDED FOR LOG REPLICATION
 
   // Initialize election timeout
   electionTimeout = new ElectionTimeout(onElectionTimeout);

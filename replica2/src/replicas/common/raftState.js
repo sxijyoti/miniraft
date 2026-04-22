@@ -50,8 +50,8 @@ class RaftState {
   }
 
   _resetRuntimeState() {
-    this.currentTerm = 0;
-    this.votedFor = null;
+    // Only reset VOLATILE state (role, leaderId).
+    // Persistent state (currentTerm, votedFor, log) is loaded from disk in _loadFromDisk().
     this.role = 'follower';
     this.leaderId = null;
     this.stateChangeTimestamp = Date.now();
@@ -245,6 +245,13 @@ class RaftState {
       if (!fs.existsSync(this._persistPath)) return;
       const raw = fs.readFileSync(this._persistPath, { encoding: 'utf8' });
       const obj = JSON.parse(raw || '{}');
+      // Restore ALL persistent state (term + votedFor + log) as required by the RAFT spec.
+      if (typeof obj.currentTerm === 'number' && obj.currentTerm >= 0) {
+        this.currentTerm = obj.currentTerm;
+      }
+      if (obj.votedFor !== undefined) {
+        this.votedFor = obj.votedFor;
+      }
       if (Array.isArray(obj.log)) this.log = obj.log;
     } catch (err) {
       if (process.env.DEBUG) console.warn(`[RaftState] load failed: ${err.message}`);
