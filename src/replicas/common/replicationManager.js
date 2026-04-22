@@ -1,10 +1,11 @@
 const { QUORUM_SIZE, RPC_TIMEOUT } = require('./constants');
 
 class ReplicationManager {
-  constructor(state, peers, logger) {
+  constructor(state, peers, logger, broadcastFn) {
     this.state = state;
     this.peers = peers;
     this.logger = logger;
+    this.broadcastFn = broadcastFn || (() => {}); // callback to broadcast strokes to clients
 
     // nextIndex: index of next log entry to send to each follower
     // matchIndex: index of highest log entry known to be replicated on follower

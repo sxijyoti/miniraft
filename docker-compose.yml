@@ -17,11 +17,6 @@ services:
       - replica1
       - replica2
       - replica3
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
     networks:
       - raft-network
 
@@ -38,15 +33,11 @@ services:
       DEV_MODE: "true"
     volumes:
       - ./replica1/src:/app/src:cached
+      - ./src/frontend:/app/src/frontend:cached
       - ./data/replica1:/app/data
     ports:
       - "4001:4001"
     restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:4001/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
     networks:
       - raft-network
 
@@ -63,15 +54,11 @@ services:
       DEV_MODE: "true"
     volumes:
       - ./replica2/src:/app/src:cached
+      - ./src/frontend:/app/src/frontend:cached
       - ./data/replica2:/app/data
     ports:
       - "4002:4002"
     restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:4002/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
     networks:
       - raft-network
 
@@ -88,15 +75,11 @@ services:
       DEV_MODE: "true"
     volumes:
       - ./replica3/src:/app/src:cached
+      - ./src/frontend:/app/src/frontend:cached
       - ./data/replica3:/app/data
     ports:
       - "4003:4003"
     restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:4003/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
     networks:
       - raft-network
 

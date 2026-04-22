@@ -1,4 +1,8 @@
 const express = require('express');
+const http = require('http');
+const path = require('path');
+const WebSocket = require('ws');
+
 const RaftState = require('../replicas/common/raftState');
 const ElectionTimeout = require('../replicas/common/electionTimeout');
 const ElectionManager = require('../replicas/common/election');
@@ -8,6 +12,11 @@ const { HEARTBEAT_INTERVAL, RPC_TIMEOUT } = require('../replicas/common/constant
 
 const app = express();
 app.use(express.json());
+
+// Serve static frontend files
+const frontendPath = path.join(__dirname, '../frontend');
+app.use('/frontend', express.static(frontendPath));
+app.get('/', (_req, res) => res.sendFile(path.join(frontendPath, 'index.html')));
 
 const REPLICA_ID = process.env.REPLICA_ID || 'unknown';
 const PORT = Number(process.env.PORT || 4001);
@@ -220,6 +229,39 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     ...snapshot
   });
+});
+
+app.get('/clients', (_req, res) => {
+  // Return count of connected WebSocket clients on this replica
+  // Each replica independently tracks its own clients
+  return res.json({ clients: wsClients.size });
+});
+
+app.get('/clients-global', async (_req, res) => {
+  // Return total count of connected clients across all replicas
+  let totalClients = wsClients.size;
+  
+  // Query other replicas in parallel with a short timeout
+  const promises = PEERS.map(peerUrl =>
+    Promise.race([
+      fetch(`${peerUrl}/clients`, { timeout: 500 })
+        .then(r => r.ok ? r.json() : { clients: 0 })
+        .catch(() => ({ clients: 0 })),
+      new Promise(resolve => setTimeout(() => resolve({ clients: 0 }), 500))
+    ])
+  );
+  
+  try {
+    const results = await Promise.all(promises);
+    results.forEach(result => {
+      totalClients += result.clients || 0;
+    });
+  } catch (err) {
+    // If aggregation fails, just return local count
+    logger.warn(`Failed to aggregate global client count: ${err.message}`);
+  }
+  
+  return res.json({ clients: totalClients });
 });
 
 app.get('/state', (_req, res) => {
@@ -446,6 +488,76 @@ app.post('/rpc/heartbeat', (req, res) => {
   });
 });
 
+// Broadcast stroke to all connected WebSocket clients
+function broadcastStroke(stroke) {
+  const message = JSON.stringify({
+    type: 'stroke',
+    ...stroke
+  });
+  
+  for (const client of wsClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+
+app.post('/rpc/broadcast-stroke', (req, res) => {
+  const payload = req.body;
+  logger.rpc('RECV', 'broadcast-stroke', `type=${payload?.type}`);
+  
+  if (payload && payload.type === 'stroke') {
+    // Relay stroke to all connected clients on this replica
+    broadcastStroke(payload);
+  }
+  
+  res.json({ ok: true });
+});
+
+app.post('/rpc/forward-stroke', (req, res) => {
+  const payload = req.body;
+  logger.rpc('RECV', 'forward-stroke', `from follower, type=${payload?.type}`);
+  
+  // Only leader should receive forwarded strokes
+  if (state.role !== 'leader') {
+    return res.status(400).json({ error: 'Not leader' });
+  }
+  
+  if (payload && payload.type === 'stroke') {
+    // Process stroke as if received directly from client
+    const entryIndex = state.appendEntry(payload);
+    logger.info(`[LEADER] Received forwarded stroke, appended at index ${entryIndex}`);
+    
+    // Broadcast to own clients
+    broadcastStroke(payload);
+    
+    // Replicate to followers
+    if (replicationManager) {
+      replicationManager.replicateToAll().catch(err => {
+        logger.warn(`Replication error: ${err.message}`);
+      });
+    }
+    
+    // Notify followers to broadcast
+    for (const peerUrl of PEERS) {
+      (async () => {
+        try {
+          await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch (err) {
+          logger.warn(`Failed to broadcast to ${peerUrl}: ${err.message}`);
+        }
+      })();
+    }
+  }
+  
+  res.json({ ok: true });
+});
+
+
 app.post('/rpc/sync-log', (req, res) => {
   const { term, leaderId, fromIndex = 0, log = [] } = req.body || {};
 
@@ -544,7 +656,148 @@ function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-const server = app.listen(PORT, '0.0.0.0', () => {
+// Create HTTP server for both REST API and WebSocket
+const server = http.createServer(app);
+
+// WebSocket server for state updates
+const wss = new WebSocket.Server({ server });
+const wsClients = new Set();
+
+// Broadcast RAFT state to all connected WebSocket clients
+function broadcastRaftState() {
+  const stateUpdate = {
+    type: 'raft-state',
+    replicaId: REPLICA_ID,
+    role: state.role,
+    term: state.currentTerm,
+    leaderId: state.leaderId,
+    logLength: state.getLogLength(),
+    commitIndex: state.commitIndex,
+    lastApplied: state.lastApplied,
+    timestamp: Date.now()
+  };
+  
+  const message = JSON.stringify(stateUpdate);
+  for (const client of wsClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+
+// Handle WebSocket connections
+wss.on('connection', (ws) => {
+  wsClients.add(ws);
+  logger.info(`[WS] Client connected (${wsClients.size})`);
+  
+  // Send initial state
+  broadcastRaftState();
+  
+  ws.on('close', () => {
+    wsClients.delete(ws);
+    logger.info(`[WS] Client disconnected (${wsClients.size})`);
+  });
+
+  ws.on('message', async (data) => {
+    try {
+      const payload = JSON.parse(data.toString());
+      
+      // Handle stroke from client (drawing command)
+      if (payload && payload.type === 'stroke') {
+        // If follower, forward stroke to leader
+        if (state.role !== 'leader') {
+          if (state.leaderId && state.leaderId !== REPLICA_ID) {
+            // Find leader URL from PEERS list
+            const leaderPeerUrl = PEERS.find(p => p.includes(`:${4001 + (state.leaderId - 1)}`)) ||
+                                   PEERS[0]; // fallback to first peer
+            logger.info(`[FOLLOWER] Forwarding stroke to leader at ${state.leaderId}`);
+            
+            try {
+              // Forward stroke to leader immediately
+              await fetch(`${leaderPeerUrl}/rpc/forward-stroke`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+            } catch (err) {
+              logger.warn(`Failed to forward stroke to leader: ${err.message}`);
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: `Cannot reach leader for drawing: ${err.message}`
+              }));
+            }
+          } else {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: `Cannot draw: Replica ${REPLICA_ID} is a ${state.role}, leader unknown`
+            }));
+          }
+          return;
+        }
+
+        // Leader appends stroke to log
+        const entryIndex = state.appendEntry(payload);
+        logger.info(`[LEADER] Appended stroke to log at index ${entryIndex}`);
+
+        // Broadcast to own clients immediately
+        broadcastStroke(payload);
+
+        // Send to followers via replication
+        if (replicationManager) {
+          await replicationManager.replicateToAll();
+        }
+
+        // Notify followers to broadcast to their clients
+        for (const peerUrl of PEERS) {
+          (async () => {
+            try {
+              await fetch(`${peerUrl}/rpc/broadcast-stroke`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+            } catch (err) {
+              logger.warn(`Failed to broadcast stroke to ${peerUrl}: ${err.message}`);
+            }
+          })();
+        }
+      }
+    } catch (err) {
+      logger.warn(`[WS] Error handling message: ${err.message}`);
+    }
+  });
+});
+
+// Update RAFT state and broadcast to clients whenever state changes
+const originalToFollower = state.toFollower.bind(state);
+state.toFollower = function(term) {
+  const changed = originalToFollower(term);
+  if (changed) broadcastRaftState();
+  return changed;
+};
+
+const originalToCandidate = state.toCandidate.bind(state);
+state.toCandidate = function() {
+  const result = originalToCandidate();
+  broadcastRaftState();
+  return result;
+};
+
+const originalToLeader = state.toLeader.bind(state);
+state.toLeader = function() {
+  const changed = originalToLeader();
+  if (changed) broadcastRaftState();
+  return changed;
+};
+
+const originalUpdateTerm = state.updateTerm.bind(state);
+state.updateTerm = function(term) {
+  const result = originalUpdateTerm(term);
+  if (result) broadcastRaftState();
+  return result;
+};
+
+server.listen(PORT, '0.0.0.0', () => {
   logger.info(`Server listening on port ${PORT}`);
   logger.info(`Replica ID: ${REPLICA_ID}`);
   logger.info(`Peers: ${PEERS.join(', ') || 'none'}`);
@@ -562,6 +815,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Periodic peer health check
   pingPeers();
   setInterval(pingPeers, 15000);
+
+  // Periodic state broadcast to clients
+  setInterval(() => broadcastRaftState(), 500);
 
   logger.info(`RAFT node started in follower mode, waiting for heartbeats...`);
 });

@@ -5,10 +5,11 @@ function createWebsocketClient(wsUrl, handlers = {}) {
   let shouldRun = true;
 
   function connect() {
+    console.log('[ws] Attempting to connect to', wsUrl);
     ws = new WebSocket(wsUrl);
 
     ws.addEventListener('open', () => {
-      console.log('[ws] connected');
+      console.log('[ws] connected to', wsUrl);
       backoff = 500;
       onOpen();
     });
@@ -17,7 +18,9 @@ function createWebsocketClient(wsUrl, handlers = {}) {
       try {
         const payload = JSON.parse(ev.data);
         if (!payload) return;
+        console.log('[ws] Received:', payload.type);
         if (payload.type === 'stroke') {
+          console.log('[ws] Drawing remote stroke');
           onStroke(payload);
           return;
         }
@@ -49,8 +52,12 @@ function createWebsocketClient(wsUrl, handlers = {}) {
   }
 
   function sendStroke(stroke) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.warn('[ws] Cannot send stroke: ws not ready. State:', ws?.readyState);
+      return false;
+    }
     try {
+      console.log('[ws] Sending stroke with', stroke.points?.length, 'points');
       ws.send(JSON.stringify(stroke));
       return true;
     } catch (err) {

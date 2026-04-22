@@ -87,6 +87,41 @@
       color: #5a3e6b;
     }
 
+    /* RAFT STATE DISPLAY */
+    .raft-state {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      background: rgba(70, 150, 220, 0.15);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1565c0;
+      border: 1px solid rgba(70, 150, 220, 0.3);
+    }
+
+    .raft-state.leader {
+      background: rgba(255, 193, 7, 0.15);
+      color: #f57f17;
+      border-color: rgba(255, 193, 7, 0.3);
+    }
+
+    .raft-state.candidate {
+      background: rgba(255, 87, 34, 0.15);
+      color: #d84315;
+      border-color: rgba(255, 87, 34, 0.3);
+    }
+
+    .raft-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 11px;
+    }
+
     /* MAIN CONTAINER */
     #container {
       flex: 1;
@@ -460,6 +495,16 @@
         <div class="status-dot"></div>
         <span id="statusText">Connecting...</span>
       </div>
+      <!-- RAFT STATE DISPLAY -->
+      <div class="raft-state" id="raftState">
+        <span>Replica <span class="raft-badge" id="replicaId">?</span></span>
+        <span>|</span>
+        <span id="raftRole">FOLLOWER</span>
+        <span>|</span>
+        <span>Term <span class="raft-badge" id="raftTerm">0</span></span>
+        <span>|</span>
+        <span>Log <span class="raft-badge" id="logLength">0</span></span>
+      </div>
     </div>
     <div class="topBar-right">
       <div class="players-count" id="playersCount">
@@ -585,10 +630,22 @@
       canvas.undo();
     });
 
+    // Determine WebSocket URL - if on replica port, connect to replica; else to gateway
+    const host = location.host;
+    const portMatch = host.split(':')[1];
+    const port = portMatch || '3000';
+    let wsUrl = 'ws://' + location.host;
+
+    // If accessed from a replica port (4001, 4002, 4003), connect directly to that replica
+    if (port === '4001' || port === '4002' || port === '4003') {
+      wsUrl = 'ws://' + location.host;
+    }
+
     // WebSocket connection
-    const ws = createWebsocketClient('ws://' + location.host, {
+    let replicaState = null;
+    const ws = createWebsocketClient(wsUrl, {
       onOpen: () => {
-        document.getElementById('statusText').textContent = 'All synced';
+        document.getElementById('statusText').textContent = 'Connected';
         console.log('[ui] connected');
       },
       onClose: () => {
@@ -596,28 +653,70 @@
         console.log('[ui] disconnected');
       },
       onStroke: (stroke) => {
+        // Draw strokes received from any replica (leader or followers)
+        // Followers relay strokes received from the leader via /rpc/broadcast-stroke
         canvas.drawRemoteStroke(stroke);
       },
       onInfo: (msg) => {
         if (!msg) return;
+        
+        // Handle RAFT state updates
+        if (msg.type === 'raft-state') {
+          replicaState = msg;
+          updateRaftDisplay(msg);
+          return;
+        }
+        
+        // Handle other messages
         if (msg.type === 'queued') {
           document.getElementById('statusText').textContent = 'Syncing...';
           setTimeout(() => {
-            document.getElementById('statusText').textContent = 'All synced';
+            document.getElementById('statusText').textContent = 'Connected';
           }, 800);
+        }
+        
+        if (msg.type === 'error') {
+          document.getElementById('statusText').textContent = msg.message || 'Error';
+          console.error(msg.message);
         }
       }
     });
 
+    // Update RAFT state display
+    function updateRaftDisplay(state) {
+      document.getElementById('replicaId').textContent = state.replicaId;
+      document.getElementById('raftTerm').textContent = state.term;
+      document.getElementById('logLength').textContent = state.logLength;
+      
+      const roleEl = document.getElementById('raftRole');
+      const raftStateEl = document.getElementById('raftState');
+      
+      const roleText = state.role.toUpperCase();
+      roleEl.textContent = roleText;
+      
+      // Update styling based on role
+      raftStateEl.classList.remove('leader', 'candidate', 'follower');
+      if (state.role === 'leader') {
+        raftStateEl.classList.add('leader');
+      } else if (state.role === 'candidate') {
+        raftStateEl.classList.add('candidate');
+      } else {
+        raftStateEl.classList.add('follower');
+      }
+    }
+
     // Local stroke handling
     canvas.onStrokeComplete((stroke) => {
+      // Always draw locally immediately
       canvas.drawRemoteStroke(stroke);
+      
+      // Send to server - server will validate if we're leader
       ws.sendStroke(stroke);
     });
 
-    // Update player count
+    // Update player count - fetch global count across all replicas
     setInterval(() => {
-      fetch('/clients')
+      fetch('/clients-global')
         .then(r => r.json())
         .then(j => {
           const count = j.clients || 0;
