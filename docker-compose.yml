@@ -15,7 +15,7 @@ services:
       - ./data/replica1:/app/data
     ports:
       - "4001:4001"
-    restart: "no"
+    restart: "on-failure"
     networks:
       - raft-network
 
@@ -35,7 +35,7 @@ services:
       - ./data/replica2:/app/data
     ports:
       - "4002:4002"
-    restart: "no"
+    restart: "on-failure"
     networks:
       - raft-network
 
@@ -55,7 +55,7 @@ services:
       - ./data/replica3:/app/data
     ports:
       - "4003:4003"
-    restart: "no"
+    restart: "on-failure"
     networks:
       - raft-network
 

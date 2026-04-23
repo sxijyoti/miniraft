@@ -8,7 +8,7 @@ const ElectionTimeout = require('../replicas/common/electionTimeout');
 const ElectionManager = require('../replicas/common/election');
 const ReplicationManager = require('../replicas/common/replicationManager'); // ADDED FOR LOG REPLICATION
 const Logger = require('../replicas/common/logger');
-const { HEARTBEAT_INTERVAL, RPC_TIMEOUT } = require('../replicas/common/constants');
+const { HEARTBEAT_INTERVAL, RPC_TIMEOUT, ELECTION_TIMEOUT_MIN } = require('../replicas/common/constants');
 
 const app = express();
 app.use(express.json());
@@ -137,8 +137,15 @@ function becomeLeader() {
     electionManager.endElection();
     electionTimeout.cancel();
 
+    // Reset isolation timer so the new leader gets a full ELECTION_TIMEOUT_MIN
+    // grace period before it considers stepping down due to no peer contact.
+    lastPeerContact = Date.now();
+
     if (replicationManager) {
-      replicationManager.resetForNewLeader(); // ADDED FOR LOG REPLICATION
+      replicationManager.resetForNewLeader();
+      // Append a no-op at the new term so prior-term entries become committable
+      // once quorum replicates this entry (RAFT §8 / leader completeness).
+      replicationManager.commitNoOp();
     }
     
     // Start heartbeat broadcast to followers (with replication)
@@ -168,10 +175,31 @@ function startHeartbeatBroadcast() {
 }
 
 /**
- * Broadcast heartbeat to all followers
- * Followers reset their election timeout when they receive heartbeat
+ * Tracks the last time ANY peer responded successfully to a heartbeat.
+ * Used to detect leader isolation and trigger a step-down.
+ */
+let lastPeerContact = Date.now();
+
+/**
+ * Broadcast heartbeat to all followers.
+ * If no peer has responded within ELECTION_TIMEOUT_MIN ms the leader
+ * steps down — it cannot be leader without a quorum.
  */
 function broadcastHeartbeat() {
+  // Step down if isolated: no peer has responded in longer than the election timeout.
+  // A real leader must have live followers; without them it cannot commit anything.
+  if (Date.now() - lastPeerContact > ELECTION_TIMEOUT_MIN) {
+    logger.stateTransition('leader', 'follower', 'no peer contact — stepping down (isolated)');
+    state.toFollower(state.currentTerm);
+    if (electionManager && electionManager.isElectionInProgress()) {
+      electionManager.endElection();
+    }
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+    electionTimeout.reset(); // will fire and become candidate, then cycle as ?? on UI
+    return;
+  }
+
   const payload = {
     term: state.currentTerm,
     leaderId: REPLICA_ID
@@ -199,6 +227,9 @@ function broadcastHeartbeat() {
 
         const result = await response.json();
 
+        // Peer responded — reset isolation timer
+        lastPeerContact = Date.now();
+
         // Higher term seen - revert to follower
         if (result.currentTerm > state.currentTerm) {
           state.updateTerm(result.currentTerm);
@@ -219,7 +250,7 @@ function broadcastHeartbeat() {
 
   // Also replicate log entries for this leader
   if (replicationManager) {
-    replicationManager.replicateToAll(); // ADDED FOR LOG REPLICATION
+    replicationManager.replicateToAll();
   }
 }
 
@@ -547,8 +578,8 @@ app.post('/rpc/forward-stroke', (req, res) => {
   }
   
   if (payload && payload.type === 'stroke') {
-    // Process stroke as if received directly from client
-    const entryIndex = state.appendEntry(payload);
+    // Wrap under 'command' so applyCommittedEntries detects it correctly.
+    const entryIndex = state.appendEntry({ command: payload });
     logger.info(`[LEADER] Received forwarded stroke, appended at index ${entryIndex}`);
     
     // Replicate to followers (and broadcast to own clients once committed)
@@ -670,6 +701,15 @@ const wsClients = new Set();
 
 // Broadcast RAFT state to all connected WebSocket clients
 function broadcastRaftState() {
+  // Determine if the leader currently has quorum.
+  // A leader has quorum when at least one peer's matchIndex >= 0,
+  // meaning a follower has acknowledged at least one log entry this term.
+  let hasQuorum = !state.isLeader(); // followers/candidates always "have quorum" for display purposes
+  if (state.isLeader() && replicationManager) {
+    const syncedPeers = Object.values(replicationManager.matchIndex).filter((m) => m >= 0).length;
+    hasQuorum = syncedPeers >= 1; // need at least 1 peer (self + 1 = majority of 3)
+  }
+
   const stateUpdate = {
     type: 'raft-state',
     replicaId: REPLICA_ID,
@@ -679,12 +719,14 @@ function broadcastRaftState() {
     logLength: state.getLogLength(),
     commitIndex: state.commitIndex,
     lastApplied: state.lastApplied,
+    hasQuorum,
     timestamp: Date.now()
   };
   
   const message = JSON.stringify(stateUpdate);
   for (const client of wsClients) {
     if (client.readyState === WebSocket.OPEN) {
+
       client.send(message);
     }
   }
@@ -747,15 +789,23 @@ wss.on('connection', (ws) => {
           return;
         }
 
-        // Leader appends stroke to log
-        const entryIndex = state.appendEntry(payload);
+        // Leader appends stroke to log wrapped under 'command' so applyCommittedEntries
+        // can detect it (logEntry.command.type === 'stroke').
+        const entryIndex = state.appendEntry({ command: payload });
         logger.info(`[LEADER] Appended stroke to log at index ${entryIndex}`);
 
-        // Send to followers via replication
+        // Optimistically broadcast to the leader's own WS clients immediately (good UX).
+        // Followers receive the stroke via applyLocal when append-entries commits it.
+        broadcastStroke(payload);
+
+        // Kick replication asynchronously; commit advances on the next heartbeat cycle.
         if (replicationManager) {
-          await replicationManager.replicateToAll();
+          replicationManager.replicateToAll().catch((err) => {
+            logger.warn(`[WS] replicateToAll error: ${err.message}`);
+          });
         }
       }
+
     } catch (err) {
       logger.warn(`[WS] Error handling message: ${err.message}`);
     }

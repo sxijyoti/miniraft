@@ -145,16 +145,41 @@ class ReplicationManager {
     }
 
     const N = this.state.getLogLength() - 1;
+    // Find the highest index reachable at the current term, then commit everything up to it.
+    // Per RAFT §5.4.2: a leader only directly commits entries from its current term;
+    // prior-term entries are committed indirectly when a current-term entry is committed.
+    let highestCommittable = -1;
     for (let idx = this.state.commitIndex + 1; idx <= N; idx++) {
-      const replicatedCount = Object.values(this.matchIndex).filter((match) => match >= idx).length + 1; // include leader
+      const replicatedCount =
+        Object.values(this.matchIndex).filter((m) => m >= idx).length + 1; // +1 for leader itself
       if (replicatedCount >= QUORUM_SIZE) {
         const entry = this.state.getEntryAt(idx);
         if (entry && entry.term === this.state.currentTerm) {
-          this.state.updateCommitIndex(idx);
-          this.logger.info(`commitIndex advanced to ${idx}`);
+          highestCommittable = idx;
         }
       }
     }
+    // Advance commitIndex to highestCommittable — this also commits all prior-term
+    // entries between the old commitIndex and highestCommittable (RAFT §5.4.2).
+    if (highestCommittable > this.state.commitIndex) {
+      this.state.updateCommitIndex(highestCommittable);
+      this.logger.info(`commitIndex advanced to ${highestCommittable}`);
+    }
+  }
+
+  /**
+   * Append a no-op entry at the current term.
+   * Called by the leader immediately after winning an election so that prior-term
+   * log entries (which cannot be committed directly) get committed indirectly once
+   * this no-op reaches quorum. (RAFT §8 / leader completeness)
+   */
+  commitNoOp() {
+    if (!this.state.isLeader()) return;
+    this.state.appendEntry({
+      term: this.state.currentTerm,
+      command: { type: 'no-op' }
+    });
+    this.logger.info(`[NO-OP] Appended no-op entry at term ${this.state.currentTerm} to unblock prior-term commits`);
   }
 
   applyCommittedEntries() {
