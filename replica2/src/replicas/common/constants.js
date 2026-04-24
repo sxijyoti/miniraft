@@ -6,9 +6,11 @@
 
 module.exports = {
   // Election timeout range (milliseconds)
-  // If follower doesn't receive heartbeat within this time, it starts election
-  ELECTION_TIMEOUT_MIN: 500,
-  ELECTION_TIMEOUT_MAX: 800,
+  // If follower doesn't receive heartbeat within this time, it starts election.
+  // Must be >> heartbeat interval (150ms) to reduce split-vote probability.
+  // RAFT paper recommends 10-20x heartbeat. Using 1500-3000ms here.
+  ELECTION_TIMEOUT_MIN: 1500,
+  ELECTION_TIMEOUT_MAX: 3000,
 
   // Heartbeat interval (milliseconds)
   // Leader sends heartbeats to all followers at this interval

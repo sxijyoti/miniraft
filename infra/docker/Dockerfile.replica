@@ -2,12 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache curl
-COPY package.json ./
-RUN npm install --omit=dev
-
-# Install nodemon globally for hot-reload during development
-RUN npm install -g nodemon
+COPY package.json ./package-lock.json ./
+COPY node_modules ./node_modules
 
 COPY src ./src
 
@@ -15,4 +11,4 @@ ENV PORT=4001
 EXPOSE 4001
 
 # If DEV_MODE is set to true, use nodemon to watch source changes and restart gracefully
-CMD ["sh", "-c", "if [ \"$DEV_MODE\" = \"true\" ]; then nodemon --watch src --delay 1 --exec \"npm run start:replica\"; else npm run start:replica; fi"]
+CMD ["sh", "-c", "if [ \"$DEV_MODE\" = \"true\" ]; then ./node_modules/.bin/nodemon --watch src --delay 1 --exec \"npm run start:replica\"; else npm run start:replica; fi"]

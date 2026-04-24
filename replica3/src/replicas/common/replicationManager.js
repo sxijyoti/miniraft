@@ -1,10 +1,11 @@
 const { QUORUM_SIZE, RPC_TIMEOUT } = require('./constants');
 
 class ReplicationManager {
-  constructor(state, peers, logger) {
+  constructor(state, peers, logger, broadcastFn) {
     this.state = state;
     this.peers = peers;
     this.logger = logger;
+    this.broadcastFn = broadcastFn || (() => {}); // callback to broadcast strokes to clients
 
     // nextIndex: index of next log entry to send to each follower
     // matchIndex: index of highest log entry known to be replicated on follower
@@ -144,16 +145,41 @@ class ReplicationManager {
     }
 
     const N = this.state.getLogLength() - 1;
+    // Find the highest index reachable at the current term, then commit everything up to it.
+    // Per RAFT §5.4.2: a leader only directly commits entries from its current term;
+    // prior-term entries are committed indirectly when a current-term entry is committed.
+    let highestCommittable = -1;
     for (let idx = this.state.commitIndex + 1; idx <= N; idx++) {
-      const replicatedCount = Object.values(this.matchIndex).filter((match) => match >= idx).length + 1; // include leader
+      const replicatedCount =
+        Object.values(this.matchIndex).filter((m) => m >= idx).length + 1; // +1 for leader itself
       if (replicatedCount >= QUORUM_SIZE) {
         const entry = this.state.getEntryAt(idx);
         if (entry && entry.term === this.state.currentTerm) {
-          this.state.updateCommitIndex(idx);
-          this.logger.info(`commitIndex advanced to ${idx}`);
+          highestCommittable = idx;
         }
       }
     }
+    // Advance commitIndex to highestCommittable — this also commits all prior-term
+    // entries between the old commitIndex and highestCommittable (RAFT §5.4.2).
+    if (highestCommittable > this.state.commitIndex) {
+      this.state.updateCommitIndex(highestCommittable);
+      this.logger.info(`commitIndex advanced to ${highestCommittable}`);
+    }
+  }
+
+  /**
+   * Append a no-op entry at the current term.
+   * Called by the leader immediately after winning an election so that prior-term
+   * log entries (which cannot be committed directly) get committed indirectly once
+   * this no-op reaches quorum. (RAFT §8 / leader completeness)
+   */
+  commitNoOp() {
+    if (!this.state.isLeader()) return;
+    this.state.appendEntry({
+      term: this.state.currentTerm,
+      command: { type: 'no-op' }
+    });
+    this.logger.info(`[NO-OP] Appended no-op entry at term ${this.state.currentTerm} to unblock prior-term commits`);
   }
 
   applyCommittedEntries() {
@@ -162,30 +188,24 @@ class ReplicationManager {
       const logEntry = this.state.getEntryAt(this.state.lastApplied);
       if (logEntry) {
         this.logger.info(`Applying log entry ${this.state.lastApplied}: ${JSON.stringify(logEntry)}`);
-        // Notify gateway about committed strokes (non-blocking)
-        try {
-          const gateway = process.env.GATEWAY_URL || process.env.GATEWAY_COMMIT_URL || 'http://localhost:3000';
-          if (logEntry.command && logEntry.command.type === 'stroke') {
-            (async () => {
-              try {
-                const body = Object.assign({}, logEntry.command || {}, {
-                  index: this.state.lastApplied,
-                  term: this.state.currentTerm,
-                  replicaId: this.state.replicaId
-                });
-                await fetch(`${gateway}/commit`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(body)
-                });
-                this.logger.debug(`Notified gateway ${gateway} of committed stroke idx=${this.state.lastApplied}`);
-              } catch (err) {
-                this.logger.warn(`Failed to notify gateway: ${err.message}`);
-              }
-            })();
+        
+        if (logEntry.command && logEntry.command.type === 'stroke') {
+          // Send committed stroke to connected clients via callback
+          try {
+            const body = Object.assign({}, logEntry.command, {
+              index: this.state.lastApplied,
+              term: this.state.currentTerm,
+              replicaId: this.state.replicaId
+            });
+            // Execute the callback synchronously or asynchronously (doesn't matter)
+            this.broadcastFn(body);
+            
+            // Broadcast committed strokes to peers explicitly in case they don't have a UI connected to leader
+            // Or wait! In RAFT, followers apply logs through AppendEntries, so they'll broadcast locally!
+            // I should NOT broadcast to peers explicitly. They will invoke their own `this.broadcastFn(body)` when they advance `commitIndex`!
+          } catch (err) {
+            this.logger.warn(`Failed to broadcast committed stroke: ${err.message}`);
           }
-        } catch (err) {
-          this.logger.warn(`gateway notify error: ${err.message}`);
         }
       }
     }
